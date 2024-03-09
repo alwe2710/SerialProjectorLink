@@ -1,7 +1,6 @@
-# Serial2Net ESP8266
-
-This ESP8266 based project is a bridge which allows to send/receive the TX/RX Serial port of any device (ie another arduino) to the LAN, using the ESP8266 Wifi connection. I use it mainly to connect RFLink to my LAN, but it could be used whenever you need a "Ser2net" LAN connection.
-
+# SerialProjectorLink
+This is a modified version of Serial2Net ESP8266. It enables Epson projectors to be connected to your network using the serial interface.
+Tested for use with Home Assistant using a EH-TW7100. Other Epson projectors should work as well.
 
 ## Features
 
