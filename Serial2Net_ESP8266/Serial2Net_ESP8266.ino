@@ -105,9 +105,6 @@ void loop(void) {
         	buf[length_hex] = serverClients[i].read(); //write input in buffer array
         	length_hex++; 
         }
-	//for (length_hex = 0; serverClients[i].available(); length_hex++) {
-		//buf[length_hex] = serverClients[i].read(); //write input in buffer array
-	//}
         uint8_t init_buf[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x00}; //Handshake Data to send
         int diff;
         int errors_diff = 0;
