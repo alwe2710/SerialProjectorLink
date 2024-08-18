@@ -98,9 +98,10 @@ void loop(void) {
   for (i = 0; i < MAX_SRV_CLIENTS; i++) {
     if (serverClients[i] && serverClients[i].connected()) {
       if (serverClients[i].available()) {
+	length_hex = 0;
         //get data from the telnet client and push it to the UART
         uint8_t buf[40];
-        while (serverClients[i].available()) { //should be raplacable by the for-loop below, not tested however
+        while (serverClients[i].available()) { //should be replacable by the for-loop below, not tested however
         	buf[length_hex] = serverClients[i].read(); //write input in buffer array
         	length_hex++; 
         }
@@ -131,7 +132,6 @@ void loop(void) {
           Serial.println();
           //Serial.println(buf_hex);
         }
-        length_hex = 0;
       }
     }
   }
