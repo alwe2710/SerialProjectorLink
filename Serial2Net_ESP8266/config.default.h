@@ -6,6 +6,10 @@
 
 //#define USE_WDT
 
+// use GPIO15 (TX) / GPIO13 (RX) instead of GPIO1 (TX) / GPIO3 (RX) for the projector,
+// so the boot messages of the ESP8266 are not sent to the projector (requires rewiring)
+//#define SWAP_UART
+
 // IP Address ------------------------------------------------------------------
 #define STATIC_IP   // comment  to enable DHCP
 

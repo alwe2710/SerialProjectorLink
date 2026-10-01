@@ -22,6 +22,7 @@ The serial port of the projector only understands ESC/VP21. The ESP8266 therefor
 - Dead connections are detected via TCP keepalive
 - Static IP or DHCP
 - Optional watchdog (`USE_WDT`)
+- Optional alternative UART pins (`SWAP_UART`), so the ESP8266 boot messages do not reach the projector
 
 ## Configuration
 
@@ -35,6 +36,7 @@ Edit `Serial2Net_ESP8266/config.default.h` before uploading the sketch:
 | `TCP_LISTEN_PORT` | `9999` | TCP port the clients connect to |
 | `BAUD_RATE` | `57600` | Serial speed, must match the serial speed of your projector |
 | `USE_WDT` | disabled | Enable the watchdog |
+| `SWAP_UART` | disabled | Use GPIO15 (TX) / GPIO13 (RX) instead of TX / RX, see [Wiring](#wiring) |
 
 Then flash `Serial2Net_ESP8266/Serial2Net_ESP8266.ino` with the Arduino IDE. The ESP8266 board package (core) version 3.0 or newer is required. No additional libraries are needed.
 
@@ -49,7 +51,9 @@ The ESP8266 uses 3.3 V TTL levels, the projector uses RS-232 levels. Connect the
 | GND | GND | GND (pin 5) |
 | 3.3 V | VCC | – |
 
-Depending on your converter module, TX/RX may need to be swapped. On some projectors RS-232C has to be selected as control port in the projector menu.
+Depending on your converter module, TX/RX may need to be swapped.
+
+On every start the ESP8266 prints boot messages on its TX pin, which the projector receives as invalid commands. This is usually harmless. To avoid it, enable `SWAP_UART` in the configuration and connect the level converter to **GPIO15** (instead of TX) and **GPIO13** (instead of RX). GPIO15 must be low during boot; most ESP8266 boards have a pull-down resistor on it. On some projectors RS-232C has to be selected as control port in the projector menu.
 
 ## Home Assistant
 

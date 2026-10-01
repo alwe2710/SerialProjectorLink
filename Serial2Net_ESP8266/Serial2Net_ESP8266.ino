@@ -66,6 +66,10 @@ void setup(void) {
 
   // Start UART
   Serial.begin(BAUD_RATE);
+#ifdef SWAP_UART
+  // use GPIO15 (TX) / GPIO13 (RX), so the boot messages on GPIO1 do not reach the projector
+  Serial.swap();
+#endif
 
   // Start server
   server.begin();
