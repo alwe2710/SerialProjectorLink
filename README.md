@@ -18,7 +18,8 @@ The serial port of the projector only understands ESC/VP21. The ESP8266 therefor
 ## Features
 
 - Makes Epson projectors without (or with unused) LAN port controllable over WiFi
-- Supports up to 4 simultaneous TCP clients
+- Supports up to 4 simultaneous TCP clients; when all are in use, the oldest connection is replaced
+- Dead connections are detected via TCP keepalive
 - Static IP or DHCP
 - Optional watchdog (`USE_WDT`)
 
@@ -35,7 +36,7 @@ Edit `Serial2Net_ESP8266/config.default.h` before uploading the sketch:
 | `BAUD_RATE` | `57600` | Serial speed, must match the serial speed of your projector |
 | `USE_WDT` | disabled | Enable the watchdog |
 
-Then flash `Serial2Net_ESP8266/Serial2Net_ESP8266.ino` with the Arduino IDE (ESP8266 board package required). No additional libraries are needed.
+Then flash `Serial2Net_ESP8266/Serial2Net_ESP8266.ino` with the Arduino IDE. The ESP8266 board package (core) version 3.0 or newer is required. No additional libraries are needed.
 
 ## Wiring
 

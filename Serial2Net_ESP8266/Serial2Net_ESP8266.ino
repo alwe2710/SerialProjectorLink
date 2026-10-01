@@ -29,10 +29,14 @@
 #define WIFI_CONNECT_TIMEOUT 30000ul  // restart if WiFi is not connected after this time (ms)
 #define HANDSHAKE_HEADER_SIZE 16      // size of an ESC/VP.net header
 #define HANDSHAKE_EXTRA_HEADER_SIZE 18 // size of each additional ESC/VP.net header (e.g. password)
+#define KEEPALIVE_IDLE 60             // TCP keepalive: idle time before first probe (s)
+#define KEEPALIVE_INTERVAL 10         // TCP keepalive: interval between probes (s)
+#define KEEPALIVE_COUNT 3             // TCP keepalive: unanswered probes until disconnect
 
 // Variables ###################################################################
 WiFiServer server(TCP_LISTEN_PORT);
 WiFiClient serverClients[MAX_SRV_CLIENTS];
+unsigned long clientConnectedAt[MAX_SRV_CLIENTS];
 
 // per client buffer collecting a command until its terminating CR
 uint8_t clientBuffers[MAX_SRV_CLIENTS][CLIENT_BUFFER_SIZE];
@@ -90,23 +94,27 @@ void loop(void) {
   // Check if there are any new clients ---------
   uint8_t i;
   if (server.hasClient()) {
+    //find free/disconnected spot, otherwise replace the oldest client
+    //(it may be a dead connection that was never closed)
+    uint8_t slot = 0;
+    unsigned long now = millis();
     for (i = 0; i < MAX_SRV_CLIENTS; i++) {
-      //find free/disconnected spot
       if (!serverClients[i] || !serverClients[i].connected()) {
-        if (serverClients[i]) {
-          serverClients[i].stop();
-        }
-        serverClients[i] = server.accept();
-        clientBufferLen[i] = 0;
-        clientSkipBytes[i] = 0;
+        slot = i;
         break;
       }
+      if (now - clientConnectedAt[i] > now - clientConnectedAt[slot]) {
+        slot = i;
+      }
     }
-    // No free/disconnected spot so reject
-    if (i == MAX_SRV_CLIENTS) {
-      WiFiClient serverClient = server.accept();
-      serverClient.stop();
+    if (serverClients[slot]) {
+      serverClients[slot].stop();
     }
+    serverClients[slot] = server.accept();
+    serverClients[slot].keepAlive(KEEPALIVE_IDLE, KEEPALIVE_INTERVAL, KEEPALIVE_COUNT);
+    clientConnectedAt[slot] = now;
+    clientBufferLen[slot] = 0;
+    clientSkipBytes[slot] = 0;
   }
 
   // check clients for data ------------------------
@@ -181,6 +189,8 @@ void handle_client_byte(uint8_t client, uint8_t c) {
 // ----------------------------------------------------------------------------
 void connect_to_wifi() {
 
+  // do not write the credentials to flash on every connect
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
