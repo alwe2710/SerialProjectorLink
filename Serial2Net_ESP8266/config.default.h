@@ -22,4 +22,3 @@
 // Server / Client Settings ----------------------------------------------------
 #define TCP_LISTEN_PORT 9999
 #define BAUD_RATE       57600   //RFLink default speed
-#define BUFFER_SIZE     128     // serial end ethernet buffer size

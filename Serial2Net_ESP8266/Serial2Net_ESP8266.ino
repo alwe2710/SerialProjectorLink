@@ -26,10 +26,19 @@
 // Defines #####################################################################
 #define MAX_SRV_CLIENTS 4
 #define CLIENT_BUFFER_SIZE 40
+#define WIFI_CONNECT_TIMEOUT 30000ul  // restart if WiFi is not connected after this time (ms)
+#define HANDSHAKE_HEADER_SIZE 16      // size of an ESC/VP.net header
+#define HANDSHAKE_EXTRA_HEADER_SIZE 18 // size of each additional ESC/VP.net header (e.g. password)
 
 // Variables ###################################################################
 WiFiServer server(TCP_LISTEN_PORT);
 WiFiClient serverClients[MAX_SRV_CLIENTS];
+
+// per client buffer collecting a command until its terminating CR
+uint8_t clientBuffers[MAX_SRV_CLIENTS][CLIENT_BUFFER_SIZE];
+size_t clientBufferLen[MAX_SRV_CLIENTS];
+// additional handshake header bytes still to be discarded
+size_t clientSkipBytes[MAX_SRV_CLIENTS];
 
 // ESC/VP.net handshake: "ESC/VP.net", version 0x10, type CONNECT (0x03)
 const uint8_t handshake_request[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x00};
@@ -87,32 +96,24 @@ void loop(void) {
         if (serverClients[i]) {
           serverClients[i].stop();
         }
-        serverClients[i] = server.available();
-        continue;
+        serverClients[i] = server.accept();
+        clientBufferLen[i] = 0;
+        clientSkipBytes[i] = 0;
+        break;
       }
     }
     // No free/disconnected spot so reject
-    WiFiClient serverClient = server.available();
-    serverClient.stop();
+    if (i == MAX_SRV_CLIENTS) {
+      WiFiClient serverClient = server.accept();
+      serverClient.stop();
+    }
   }
 
   // check clients for data ------------------------
   for (i = 0; i < MAX_SRV_CLIENTS; i++) {
-    if (serverClients[i] && serverClients[i].connected() && serverClients[i].available()) {
-      //get data from the client
-      uint8_t buf[CLIENT_BUFFER_SIZE];
-      size_t len = 0;
-      while (serverClients[i].available() && len < CLIENT_BUFFER_SIZE) {
-        buf[len++] = serverClients[i].read();
-      }
-
-      if (len >= sizeof(handshake_request) && memcmp(buf, handshake_request, sizeof(handshake_request)) == 0) {
-        //answer the handshake request without communicating to the projector
-        serverClients[i].write(handshake_response, sizeof(handshake_response));
-      } else {
-        //otherwise pass command to projector
-        Serial.write(buf, len);
-        Serial.println();
+    if (serverClients[i] && serverClients[i].connected()) {
+      while (serverClients[i].available()) {
+        handle_client_byte(i, serverClients[i].read());
       }
     }
   }
@@ -136,14 +137,53 @@ void loop(void) {
 // Functions ###################################################################
 
 // ----------------------------------------------------------------------------
+// Collects the data of a client until a command is complete:
+// - an ESC/VP.net handshake is answered without communicating to the projector
+// - a command terminated by CR (or LF) is passed to the projector with a single CR
+void handle_client_byte(uint8_t client, uint8_t c) {
+  uint8_t *buf = clientBuffers[client];
+  size_t &len = clientBufferLen[client];
+
+  // discard additional handshake headers
+  if (clientSkipBytes[client] > 0) {
+    clientSkipBytes[client]--;
+    return;
+  }
+
+  if (c == '\r' || c == '\n') {
+    // skip empty commands (e.g. the LF of a CR LF)
+    if (len > 0) {
+      Serial.write(buf, len);
+      Serial.write('\r');
+      len = 0;
+    }
+    return;
+  }
+
+  buf[len++] = c;
+
+  // check for a handshake request
+  if (len == HANDSHAKE_HEADER_SIZE && memcmp(buf, handshake_request, sizeof(handshake_request)) == 0) {
+    serverClients[client].write(handshake_response, sizeof(handshake_response));
+    clientSkipBytes[client] = buf[HANDSHAKE_HEADER_SIZE - 1] * HANDSHAKE_EXTRA_HEADER_SIZE;
+    len = 0;
+    return;
+  }
+
+  // buffer full without terminator: pass data to projector as is
+  if (len == CLIENT_BUFFER_SIZE) {
+    Serial.write(buf, len);
+    len = 0;
+  }
+}
+
+
+// ----------------------------------------------------------------------------
 void connect_to_wifi() {
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
-
-  // connect
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
 #ifdef STATIC_IP
   IPAddress ip_address = parse_ip_address(IP_ADDRESS);
@@ -152,11 +192,18 @@ void connect_to_wifi() {
   WiFi.config(ip_address, gateway_address, netmask);
 #endif
 
-  // Wait for WIFI connection
+  // connect
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  // Wait for WIFI connection, restart if it takes too long
+  unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
 #ifdef USE_WDT
     wdt_reset();
 #endif
+    if (millis() - start > WIFI_CONNECT_TIMEOUT) {
+      ESP.restart();
+    }
     delay(100);
   }
 }
