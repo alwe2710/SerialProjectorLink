@@ -7,7 +7,7 @@ Tested with Home Assistant ([Epson integration](https://www.home-assistant.io/in
 
 ## How it works
 
-Network-enabled Epson projectors are controlled over TCP port 3629 using ESC/VP.net. A client (e.g. Home Assistant) first sends an ESC/VP.net handshake, then plain ESC/VP21 commands such as `PWR ON` or `PWR?`.
+Network-enabled Epson projectors are controlled over TCP using ESC/VP.net. A client (e.g. Home Assistant) first sends an ESC/VP.net handshake, then plain ESC/VP21 commands such as `PWR ON` or `PWR?`.
 
 The serial port of the projector only understands ESC/VP21. The ESP8266 therefore:
 
@@ -29,10 +29,10 @@ Edit `Serial2Net_ESP8266/config.default.h` before uploading the sketch:
 | Setting | Default | Description |
 |---|---|---|
 | `STATIC_IP` | enabled | Comment out to use DHCP |
-| `IP_ADDRESS`, `GATEWAY_ADDRESS`, `NET_MASK` | `192.168.1.50`, `192.168.1.1`, `255.255.255.0` | Network settings for static IP |
+| `IP_ADDRESS`, `GATEWAY_ADDRESS`, `NET_MASK` | `10.1.7.41`, `10.1.11.1`, `255.255.0.0` | Network settings for static IP |
 | `WIFI_SSID`, `WIFI_PASSWORD` | placeholders | Your WiFi credentials |
-| `TCP_LISTEN_PORT` | `3629` | Epson ESC/VP.net port, expected by Home Assistant |
-| `BAUD_RATE` | `9600` | Epson RS-232C speed (8 data bits, no parity, 1 stop bit) |
+| `TCP_LISTEN_PORT` | `9999` | TCP port the clients connect to |
+| `BAUD_RATE` | `57600` | Serial speed, must match the serial speed of your projector |
 | `USE_WDT` | disabled | Enable the watchdog |
 
 Then flash `Serial2Net_ESP8266/Serial2Net_ESP8266.ino` with the Arduino IDE (ESP8266 board package required). No additional libraries are needed.
@@ -52,7 +52,7 @@ Depending on your converter module, TX/RX may need to be swapped. On some projec
 
 ## Home Assistant
 
-Add the Epson integration and enter the IP address of the ESP8266 as host. The integration connects to port 3629 by default.
+Add the Epson integration and enter the IP address of the ESP8266 as host.
 
 ## License
 
