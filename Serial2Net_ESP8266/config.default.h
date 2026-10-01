@@ -1,7 +1,6 @@
 /*
-    Configuration example
-    Rename me to "config_CUSTOM.h"
-    and include me from  Serial2Net_ESP8266.ino
+    Configuration for SerialProjectorLink
+    Adjust the values below before uploading the sketch.
 */
 
 //#define USE_WDT
@@ -10,9 +9,9 @@
 #define STATIC_IP   // comment  to enable DHCP
 
 #ifdef STATIC_IP
-#define IP_ADDRESS      "10.1.7.41"
-#define GATEWAY_ADDRESS "10.1.11.1"
-#define NET_MASK        "255.255.0.0"
+#define IP_ADDRESS      "192.168.1.50"
+#define GATEWAY_ADDRESS "192.168.1.1"
+#define NET_MASK        "255.255.255.0"
 #endif
 
 // Wifi credentials ------------------------------------------------------------
@@ -20,12 +19,5 @@
 #define WIFI_PASSWORD   "Your_SSID_Password"
 
 // Server / Client Settings ----------------------------------------------------
-#define TCP_LISTEN_PORT 9999
-#define BAUD_RATE       57600   //RFLink default speed
-#define BUFFER_SIZE     128     // serial end ethernet buffer size
-
-// PINS ------------------------------------------------------------------------
-#define WIFI_LED        16
-#define CONNECTION_LED  14
-#define TX_LED          12
-#define RX_LED          13
+#define TCP_LISTEN_PORT 3629    // Epson ESC/VP.net port
+#define BAUD_RATE       9600    // Epson RS-232C speed (8N1)

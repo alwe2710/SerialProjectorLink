@@ -4,7 +4,9 @@
 	Copyright 2017 François Déchery
 
 	** Description **********************************************************
-	Briges a Serial Port to/from a (Wifi attached) LAN using a ESP8266 board
+	Bridges the RS-232C port of an Epson projector to/from a (Wifi attached)
+	LAN using a ESP8266 board. Answers the ESC/VP.net handshake itself and
+	forwards ESC/VP21 commands to the projector.
 
 	** Inpired by ***********************************************************
 	* ESP8266 Ser2net by Daniel Parnell
@@ -16,8 +18,6 @@
 
 // Use your Own Config #########################################################
 #include "config.default.h"
-//#include	"config_315.h"
-//#include	"config_433.h"
 
 
 // Includes ###################################################################
@@ -25,13 +25,16 @@
 
 // Defines #####################################################################
 #define MAX_SRV_CLIENTS 4
+#define CLIENT_BUFFER_SIZE 40
 
 // Variables ###################################################################
-int last_srv_clients_count = 0;
-int length_hex;
-
 WiFiServer server(TCP_LISTEN_PORT);
 WiFiClient serverClients[MAX_SRV_CLIENTS];
+
+// ESC/VP.net handshake: "ESC/VP.net", version 0x10, type CONNECT (0x03)
+const uint8_t handshake_request[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x00};
+// Same header with status 0x20 (OK) and no additional headers
+const uint8_t handshake_response[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x20, 0x00};
 
 
 // #############################################################################
@@ -85,7 +88,6 @@ void loop(void) {
           serverClients[i].stop();
         }
         serverClients[i] = server.available();
-        //Serial1.print("New client: "); Serial1.print(i);
         continue;
       }
     }
@@ -96,39 +98,21 @@ void loop(void) {
 
   // check clients for data ------------------------
   for (i = 0; i < MAX_SRV_CLIENTS; i++) {
-    if (serverClients[i] && serverClients[i].connected()) {
-      if (serverClients[i].available()) {
-	length_hex = 0;
-        //get data from the telnet client and push it to the UART
-        uint8_t buf[40];
-        while (serverClients[i].available()) { //should be replacable by the for-loop below, not tested however
-        	buf[length_hex] = serverClients[i].read(); //write input in buffer array
-        	length_hex++; 
-        }
-        uint8_t init_buf[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x00}; //Handshake Data to send
-        int diff;
-        int errors_diff = 0;
-        for (int i=0; i<15; i++) {
-          diff = buf[i]-init_buf[i];
-          if(diff!=0) {
-            errors_diff++;
-          }
-        }
-        if(errors_diff == 0) { //check for a Handshake request and answer without communicating to the projector
-          byte message[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x20, 0x00};
-          serverClients[i].write(message, sizeof(message));
-        }
-        else { //otherwise pass command to projector
-          //String buf_hex;
-          for (int i=0; i<length_hex; i++) { //send text of buffer character by character
-            //String buf_str = String(buf[i], HEX);
-            //buf_hex += buf_str;
-            //Serial.println(buf_str);
-            Serial.write(buf[i]);
-          }
-          Serial.println();
-          //Serial.println(buf_hex);
-        }
+    if (serverClients[i] && serverClients[i].connected() && serverClients[i].available()) {
+      //get data from the client
+      uint8_t buf[CLIENT_BUFFER_SIZE];
+      size_t len = 0;
+      while (serverClients[i].available() && len < CLIENT_BUFFER_SIZE) {
+        buf[len++] = serverClients[i].read();
+      }
+
+      if (len >= sizeof(handshake_request) && memcmp(buf, handshake_request, sizeof(handshake_request)) == 0) {
+        //answer the handshake request without communicating to the projector
+        serverClients[i].write(handshake_response, sizeof(handshake_response));
+      } else {
+        //otherwise pass command to projector
+        Serial.write(buf, len);
+        Serial.println();
       }
     }
   }
@@ -138,12 +122,10 @@ void loop(void) {
     size_t len = Serial.available();
     uint8_t sbuf[len];
     Serial.readBytes(sbuf, len);
-    //push UART data to all connected telnet clients
+    //push UART data to all connected clients
     for (i = 0; i < MAX_SRV_CLIENTS; i++) {
       if (serverClients[i] && serverClients[i].connected()) {
-        //led_rx.pulse();
         serverClients[i].write(sbuf, len);
-        //led_tx.update();
         delay(1);
       }
     }
@@ -156,7 +138,6 @@ void loop(void) {
 // ----------------------------------------------------------------------------
 void connect_to_wifi() {
 
-  // is this really needed ?
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
@@ -179,8 +160,6 @@ void connect_to_wifi() {
     delay(100);
   }
 }
-
-
 
 
 // ----------------------------------------------------------------------------
