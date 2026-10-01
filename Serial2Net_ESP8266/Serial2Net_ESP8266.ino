@@ -4,7 +4,9 @@
 	Copyright 2017 François Déchery
 
 	** Description **********************************************************
-	Briges a Serial Port to/from a (Wifi attached) LAN using a ESP8266 board
+	Bridges the RS-232C port of an Epson projector to/from a (Wifi attached)
+	LAN using a ESP8266 board. Answers the ESC/VP.net handshake itself and
+	forwards ESC/VP21 commands to the projector.
 
 	** Inpired by ***********************************************************
 	* ESP8266 Ser2net by Daniel Parnell
@@ -16,8 +18,6 @@
 
 // Use your Own Config #########################################################
 #include "config.default.h"
-//#include	"config_315.h"
-//#include	"config_433.h"
 
 
 // Includes ###################################################################
@@ -25,13 +25,29 @@
 
 // Defines #####################################################################
 #define MAX_SRV_CLIENTS 4
+#define CLIENT_BUFFER_SIZE 40
+#define WIFI_CONNECT_TIMEOUT 30000ul  // restart if WiFi is not connected after this time (ms)
+#define HANDSHAKE_HEADER_SIZE 16      // size of an ESC/VP.net header
+#define HANDSHAKE_EXTRA_HEADER_SIZE 18 // size of each additional ESC/VP.net header (e.g. password)
+#define KEEPALIVE_IDLE 60             // TCP keepalive: idle time before first probe (s)
+#define KEEPALIVE_INTERVAL 10         // TCP keepalive: interval between probes (s)
+#define KEEPALIVE_COUNT 3             // TCP keepalive: unanswered probes until disconnect
 
 // Variables ###################################################################
-int last_srv_clients_count = 0;
-int length_hex;
-
 WiFiServer server(TCP_LISTEN_PORT);
 WiFiClient serverClients[MAX_SRV_CLIENTS];
+unsigned long clientConnectedAt[MAX_SRV_CLIENTS];
+
+// per client buffer collecting a command until its terminating CR
+uint8_t clientBuffers[MAX_SRV_CLIENTS][CLIENT_BUFFER_SIZE];
+size_t clientBufferLen[MAX_SRV_CLIENTS];
+// additional handshake header bytes still to be discarded
+size_t clientSkipBytes[MAX_SRV_CLIENTS];
+
+// ESC/VP.net handshake: "ESC/VP.net", version 0x10, type CONNECT (0x03)
+const uint8_t handshake_request[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x00};
+// Same header with status 0x20 (OK) and no additional headers
+const uint8_t handshake_response[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x20, 0x00};
 
 
 // #############################################################################
@@ -50,6 +66,10 @@ void setup(void) {
 
   // Start UART
   Serial.begin(BAUD_RATE);
+#ifdef SWAP_UART
+  // use GPIO15 (TX) / GPIO13 (RX), so the boot messages on GPIO1 do not reach the projector
+  Serial.swap();
+#endif
 
   // Start server
   server.begin();
@@ -78,57 +98,34 @@ void loop(void) {
   // Check if there are any new clients ---------
   uint8_t i;
   if (server.hasClient()) {
+    //find free/disconnected spot, otherwise replace the oldest client
+    //(it may be a dead connection that was never closed)
+    uint8_t slot = 0;
+    unsigned long now = millis();
     for (i = 0; i < MAX_SRV_CLIENTS; i++) {
-      //find free/disconnected spot
       if (!serverClients[i] || !serverClients[i].connected()) {
-        if (serverClients[i]) {
-          serverClients[i].stop();
-        }
-        serverClients[i] = server.available();
-        //Serial1.print("New client: "); Serial1.print(i);
-        continue;
+        slot = i;
+        break;
+      }
+      if (now - clientConnectedAt[i] > now - clientConnectedAt[slot]) {
+        slot = i;
       }
     }
-    // No free/disconnected spot so reject
-    WiFiClient serverClient = server.available();
-    serverClient.stop();
+    if (serverClients[slot]) {
+      serverClients[slot].stop();
+    }
+    serverClients[slot] = server.accept();
+    serverClients[slot].keepAlive(KEEPALIVE_IDLE, KEEPALIVE_INTERVAL, KEEPALIVE_COUNT);
+    clientConnectedAt[slot] = now;
+    clientBufferLen[slot] = 0;
+    clientSkipBytes[slot] = 0;
   }
 
   // check clients for data ------------------------
   for (i = 0; i < MAX_SRV_CLIENTS; i++) {
     if (serverClients[i] && serverClients[i].connected()) {
-      if (serverClients[i].available()) {
-	length_hex = 0;
-        //get data from the telnet client and push it to the UART
-        uint8_t buf[40];
-        while (serverClients[i].available()) { //should be replacable by the for-loop below, not tested however
-        	buf[length_hex] = serverClients[i].read(); //write input in buffer array
-        	length_hex++; 
-        }
-        uint8_t init_buf[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x00}; //Handshake Data to send
-        int diff;
-        int errors_diff = 0;
-        for (int i=0; i<15; i++) {
-          diff = buf[i]-init_buf[i];
-          if(diff!=0) {
-            errors_diff++;
-          }
-        }
-        if(errors_diff == 0) { //check for a Handshake request and answer without communicating to the projector
-          byte message[] = {0x45, 0x53, 0x43, 0x2F, 0x56, 0x50, 0x2E, 0x6E, 0x65, 0x74, 0x10, 0x03, 0x00, 0x00, 0x20, 0x00};
-          serverClients[i].write(message, sizeof(message));
-        }
-        else { //otherwise pass command to projector
-          //String buf_hex;
-          for (int i=0; i<length_hex; i++) { //send text of buffer character by character
-            //String buf_str = String(buf[i], HEX);
-            //buf_hex += buf_str;
-            //Serial.println(buf_str);
-            Serial.write(buf[i]);
-          }
-          Serial.println();
-          //Serial.println(buf_hex);
-        }
+      while (serverClients[i].available()) {
+        handle_client_byte(i, serverClients[i].read());
       }
     }
   }
@@ -138,12 +135,10 @@ void loop(void) {
     size_t len = Serial.available();
     uint8_t sbuf[len];
     Serial.readBytes(sbuf, len);
-    //push UART data to all connected telnet clients
+    //push UART data to all connected clients
     for (i = 0; i < MAX_SRV_CLIENTS; i++) {
       if (serverClients[i] && serverClients[i].connected()) {
-        //led_rx.pulse();
         serverClients[i].write(sbuf, len);
-        //led_tx.update();
         delay(1);
       }
     }
@@ -154,15 +149,55 @@ void loop(void) {
 // Functions ###################################################################
 
 // ----------------------------------------------------------------------------
+// Collects the data of a client until a command is complete:
+// - an ESC/VP.net handshake is answered without communicating to the projector
+// - a command terminated by CR (or LF) is passed to the projector with a single CR
+void handle_client_byte(uint8_t client, uint8_t c) {
+  uint8_t *buf = clientBuffers[client];
+  size_t &len = clientBufferLen[client];
+
+  // discard additional handshake headers
+  if (clientSkipBytes[client] > 0) {
+    clientSkipBytes[client]--;
+    return;
+  }
+
+  if (c == '\r' || c == '\n') {
+    // skip empty commands (e.g. the LF of a CR LF)
+    if (len > 0) {
+      Serial.write(buf, len);
+      Serial.write('\r');
+      len = 0;
+    }
+    return;
+  }
+
+  buf[len++] = c;
+
+  // check for a handshake request
+  if (len == HANDSHAKE_HEADER_SIZE && memcmp(buf, handshake_request, sizeof(handshake_request)) == 0) {
+    serverClients[client].write(handshake_response, sizeof(handshake_response));
+    clientSkipBytes[client] = buf[HANDSHAKE_HEADER_SIZE - 1] * HANDSHAKE_EXTRA_HEADER_SIZE;
+    len = 0;
+    return;
+  }
+
+  // buffer full without terminator: pass data to projector as is
+  if (len == CLIENT_BUFFER_SIZE) {
+    Serial.write(buf, len);
+    len = 0;
+  }
+}
+
+
+// ----------------------------------------------------------------------------
 void connect_to_wifi() {
 
-  // is this really needed ?
+  // do not write the credentials to flash on every connect
+  WiFi.persistent(false);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
-
-  // connect
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
 #ifdef STATIC_IP
   IPAddress ip_address = parse_ip_address(IP_ADDRESS);
@@ -171,16 +206,21 @@ void connect_to_wifi() {
   WiFi.config(ip_address, gateway_address, netmask);
 #endif
 
-  // Wait for WIFI connection
+  // connect
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+  // Wait for WIFI connection, restart if it takes too long
+  unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
 #ifdef USE_WDT
     wdt_reset();
 #endif
+    if (millis() - start > WIFI_CONNECT_TIMEOUT) {
+      ESP.restart();
+    }
     delay(100);
   }
 }
-
-
 
 
 // ----------------------------------------------------------------------------

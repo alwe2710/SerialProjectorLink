@@ -6,6 +6,10 @@
 
 //#define USE_WDT
 
+// use GPIO15 (TX) / GPIO13 (RX) instead of GPIO1 (TX) / GPIO3 (RX) for the projector,
+// so the boot messages of the ESP8266 are not sent to the projector (requires rewiring)
+//#define SWAP_UART
+
 // IP Address ------------------------------------------------------------------
 #define STATIC_IP   // comment  to enable DHCP
 
@@ -22,10 +26,3 @@
 // Server / Client Settings ----------------------------------------------------
 #define TCP_LISTEN_PORT 9999
 #define BAUD_RATE       57600   //RFLink default speed
-#define BUFFER_SIZE     128     // serial end ethernet buffer size
-
-// PINS ------------------------------------------------------------------------
-#define WIFI_LED        16
-#define CONNECTION_LED  14
-#define TX_LED          12
-#define RX_LED          13
